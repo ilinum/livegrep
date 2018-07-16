@@ -3,11 +3,11 @@ $ = require('jquery');
 var KeyCodes = {
   ESCAPE: 27,
   ENTER: 13,
-  SLASH_OR_QUESTION_MARK: 191
-    COMMAND: 91,
+  SLASH_OR_QUESTION_MARK: 191,
+  COMMAND: 91,
 };
 
-let isCmdDown = false;
+var isCmdDown = false;
 
 function getSelectedText() {
   return window.getSelection ? window.getSelection().toString() : null;
@@ -215,7 +215,7 @@ function init(initData) {
   }
 
   function triggerJumpToDef(event) {
-      let curEvent = $(event.target);
+      var curEvent = $(event.target);
       while ((curEvent.attr('class') && curEvent.attr('class').substring(0, 4) === "hljs") || curEvent.data("row") === undefined) {
           curEvent = curEvent.parent();
       }
@@ -241,9 +241,9 @@ function init(initData) {
       console.log("APPLYJUMPTODEF TAGS");
       const content = $('#source-code').text().replace(/[<]/g, "&lt;").replace(/[>]/g, "&gt;");
       const contentArr = content.split("\n");
-      let newHtml = "";
+      var newHtml = "";
 
-      for (let i = 0; i < contentArr.length; i++) {
+      for (var i = 0; i < contentArr.length; i++) {
           newHtml += "<span data-row=" + i + ">" + contentArr[i] + "</span>\n";
       }
 
