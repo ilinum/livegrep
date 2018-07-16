@@ -72,7 +72,6 @@ type RepoConfig struct {
 	LangServers []LangServer      `json:"lang_servers"`
 }
 
-
 type LangServer struct {
 	Address    string   `json:"address"`
 	Extensions []string `json:"extensions"`

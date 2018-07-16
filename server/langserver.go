@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	"net"
-	"strings"
 
 	lngs "github.com/livegrep/livegrep/server/langserver"
 
 	"github.com/livegrep/livegrep/server/config"
 	"github.com/sourcegraph/jsonrpc2"
+	"path/filepath"
 )
 
 type ClientCapabilities struct{}
@@ -30,17 +30,14 @@ type InitializeResult struct {
 }
 
 func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.LangServer {
+	fileExt := filepath.Ext(filePath)
+	fmt.Println("fileExt", fileExt)
 	fmt.Println("repo", repo)
-	fmt.Println("filepath", filePath)
-	normalizedExt := func(path string) string {
-		split := strings.Split(path, ".")
-		ext := split[len(split)-1]
-		return strings.ToLower(strings.TrimSpace(ext))
-	}
 	for _, langServer := range repo.LangServers {
+		fmt.Println(langServer)
 		for _, ext := range langServer.Extensions {
-			fmt.Println("ext", normalizedExt(filePath), normalizedExt(ext))
-			if normalizedExt(filePath) == normalizedExt(ext) {
+			fmt.Println("ext", ext)
+			if ext == fileExt {
 				return &langServer
 			}
 		}

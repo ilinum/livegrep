@@ -215,6 +215,8 @@ function init(initData) {
   }
 
   function triggerJumpToDef(event) {
+      var info = getFileInfo();
+      console.log(info)
       var curEvent = $(event.target);
       while ((curEvent.attr('class') && curEvent.attr('class').substring(0, 4) === "hljs") || curEvent.data("row") === undefined) {
           curEvent = curEvent.parent();
@@ -232,8 +234,8 @@ function init(initData) {
           }
       }
 
-      console.log("sending request to /api/v1/langserver/jumptodef?repo_name=" + window.repoInfo.name + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
-      xhttp.open("GET", "/api/v1/langserver/jumptodef?repo_name=" + window.repoInfo.name + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
+      console.log("sending request to /api/v1/langserver/jumptodef?repo_name=" + info.repoName + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
+      xhttp.open("GET", "/api/v1/langserver/jumptodef?repo_name=" + info.repoName + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
       xhttp.send()
   }
 
@@ -248,7 +250,7 @@ function init(initData) {
       }
 
       $('#source-code').html(newHtml);
-      hljs.highlightBlock($('#source-code')[0]);
+      // hljs.highlightBlock($('#source-code')[0]);
 
   }
 
@@ -359,7 +361,7 @@ function init(initData) {
       // Filter out key events when the user has focused an input field.
       if($(event.target).is('input,textarea'))
         return;
-      if (event.which === KeyCodes.COMMAND) {
+      if (event.which === 17) {
         isCmdDown = true;
       }
       // Filter out key if a modifier is pressed.

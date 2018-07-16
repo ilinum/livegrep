@@ -301,9 +301,10 @@ func (s *server) ServeJumpToDef(ctx context.Context, w http.ResponseWriter, r *h
 		params := lngs.TextDocumentPositionParams{TextDocument: lngs.TextDocumentIdentifier{URI: uri}, Position: lngs.Position{Line: row, Character: col}}
 
 		//TODO (anurag): initialize a langServerClientImpl and call the function below on it
-		fmt.Println("langserver", GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0], uri))
-		fmt.Println("address", GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0], uri).Address)
-		langServer := s.langsrv[GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0], uri).Address]
+
+		l := GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0], uri)
+		fmt.Println("langserver", l)
+		langServer := s.langsrv[l.Address]
 		locations, err := langServer.JumpToDef(&params)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
