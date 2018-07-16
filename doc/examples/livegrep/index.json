@@ -1,9 +1,9 @@
 {
-    "name": "stasbrowse",
+    "name": "livegrep",
     "repositories": [
         {
-            "name": "mypy",
-            "path": "/home/xiaov/src/mypy",
+            "name": "livegrep",
+            "path": ".",
             "revisions": [
                 "HEAD"
             ],
@@ -14,7 +14,7 @@
                 {
                     "address": "0.0.0.0:3141",
                     "extensions": [
-                        ".py"
+                        ".go"
                     ]
                 }
             ]
