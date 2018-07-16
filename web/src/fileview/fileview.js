@@ -4,7 +4,10 @@ var KeyCodes = {
   ESCAPE: 27,
   ENTER: 13,
   SLASH_OR_QUESTION_MARK: 191
+    COMMAND: 91,
 };
+
+let isCmdDown = false;
 
 function getSelectedText() {
   return window.getSelection ? window.getSelection().toString() : null;
@@ -211,6 +214,44 @@ function init(initData) {
     });
   }
 
+  function triggerJumpToDef(event) {
+      let curEvent = $(event.target);
+      while ((curEvent.attr('class') && curEvent.attr('class').substring(0, 4) === "hljs") || curEvent.data("row") === undefined) {
+          curEvent = curEvent.parent();
+      }
+      const row = curEvent.data("row");
+      const col = document.getSelection().anchorOffset;
+
+      xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+          if (this.status == 200 && this.responseText) {
+              const resp = JSON.parse(this.responseText);
+              window.location.replace(resp.url);
+          } else {
+              console.log("ERROR: " + this.status);
+          }
+      }
+
+      console.log("sending request to /api/v1/langserver/jumptodef?repo_name=" + window.repoInfo.name + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
+      xhttp.open("GET", "/api/v1/langserver/jumptodef?repo_name=" + window.repoInfo.name + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
+      xhttp.send()
+  }
+
+  function applyJumpToDefTags() {
+      console.log("APPLYJUMPTODEF TAGS");
+      const content = $('#source-code').text().replace(/[<]/g, "&lt;").replace(/[>]/g, "&gt;");
+      const contentArr = content.split("\n");
+      let newHtml = "";
+
+      for (let i = 0; i < contentArr.length; i++) {
+          newHtml += "<span data-row=" + i + ">" + contentArr[i] + "</span>\n";
+      }
+
+      $('#source-code').html(newHtml);
+      hljs.highlightBlock($('#source-code')[0]);
+
+  }
+
   function processKeyEvent(event) {
     if(event.which === KeyCodes.ENTER) {
       // Perform a new search with the selected text, if any
@@ -293,6 +334,10 @@ function init(initData) {
     // Initial range detection for when the page is loaded
     handleHashChange();
 
+    // Send request to find and add appriopriate declarations for all function in code
+    // decorateFunctions().
+    applyJumpToDefTags();
+
     // Allow shift clicking links to expand the highlight range
     lineNumberContainer.on('click', 'a', function(event) {
       event.preventDefault();
@@ -314,10 +359,26 @@ function init(initData) {
       // Filter out key events when the user has focused an input field.
       if($(event.target).is('input,textarea'))
         return;
+      if (event.which === KeyCodes.COMMAND) {
+        isCmdDown = true;
+      }
       // Filter out key if a modifier is pressed.
       if(event.altKey || event.ctrlKey || event.metaKey)
         return;
       processKeyEvent(event);
+    });
+
+    $(document).on('keyup', function(event) {
+      if (event.which === KeyCodes.COMMAND) {
+        isCmdDown = false;
+      }
+    });
+
+    // if cmd + click is found, trigger jump to definition
+    $(document).on('click', function (event) {
+      if (isCmdDown) {
+        triggerJumpToDef(event);
+      }
     });
 
     $(document).mouseup(function() {

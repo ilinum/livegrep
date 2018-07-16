@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"strconv"
 	texttemplate "text/template"
 	"time"
 
@@ -13,6 +14,11 @@ import (
 
 	"github.com/bmizerany/pat"
 	libhoney "github.com/honeycombio/libhoney-go"
+
+	lngs "github.com/livegrep/livegrep/server/langserver"
+
+	"path/filepath"
+	"strings"
 
 	"github.com/livegrep/livegrep/server/config"
 	"github.com/livegrep/livegrep/server/log"
@@ -36,6 +42,7 @@ type server struct {
 	bk          map[string]*Backend
 	bkOrder     []string
 	repos       map[string]config.RepoConfig
+	langsrv map[string]LangServerClient
 	inner       http.Handler
 	Templates   map[string]*template.Template
 	OpenSearch  *texttemplate.Template
@@ -43,6 +50,17 @@ type server struct {
 	Layout      *template.Template
 
 	honey *libhoney.Builder
+}
+
+type GotoDefRequest struct {
+	RepoName string `json:"repo_name"`
+	FilePath string `json:"file_path"`
+	Row      int    `json:"row"`
+	Col      int    `json:"col"`
+}
+
+type GotoDefResponse struct {
+	URL string `json:"url"`
 }
 
 func (s *server) loadTemplates() {
@@ -268,6 +286,91 @@ func (h *reloadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.inner.ServeHTTP(w, r)
 }
 
+func (s *server) ServeJumpToDef(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+	fmt.Println("ServeJumpToDef")
+	fmt.Printf("r.URL.Query(): %v\n", r.URL.Query())
+
+	if len(params["repo_name"]) == 1 && len(params["file_path"]) == 1 && len(params["row"]) == 1 && len(params["col"]) == 1 {
+		row, _ := strconv.Atoi(params["row"][0])
+		col, _ := strconv.Atoi(params["col"][0])
+		repoName := params["repo_name"][0]
+
+		//uri := s.config.IndexConfig.Repositories[0].Path
+		uri := "file://" + s.config.IndexConfig.Repositories[0].Path + "/" + params["file_path"][0]
+		params := lngs.TextDocumentPositionParams{TextDocument: lngs.TextDocumentIdentifier{URI: uri}, Position: lngs.Position{Line: row, Character: col}}
+
+		//TODO (anurag): initialize a langServerClientImpl and call the function below on it
+		fmt.Println("langserver", GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0], uri))
+		fmt.Println("address", GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0], uri).Address)
+		langServer := s.langsrv[GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0], uri).Address]
+		locations, err := langServer.JumpToDef(&params)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		if len(locations) == 0 {
+			http.Error(w, "No locations for symbol.", 500)
+			return
+		}
+
+		// Or probably you should just initialize one instance and store it on the server, discuss with stas
+		// locations, _ := JumpToDef(input)
+
+		targetPath := strings.Replace(locations[0].URI, "file://", "", 1)
+		lineNum := locations[0].TextRange.Start.Line
+		relPath, _ := filepath.Rel(s.config.IndexConfig.Repositories[0].Path, targetPath)
+
+		fmt.Println(targetPath)
+		fmt.Println(s.config.IndexConfig.Repositories[0].Path + "/")
+		fmt.Println(relPath)
+
+		//TODO (xiaov): add response with error code if no def is found
+		replyJSON(ctx, w, 200, &GotoDefResponse{
+			URL: "/view/" + repoName + "/" + relPath + "#L" + strconv.Itoa(lineNum+1),
+		})
+	}
+}
+
+func (s *server) ServeGetFunctions(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+	fmt.Println("ServerGetFunctions!")
+	filePaths := params["file_path"]
+	repoNames := params["repo_name"]
+	symbolRanges := []lngs.Range{}
+
+	if len(filePaths) == 1 && len(repoNames) == 1 {
+		filePath := filePaths[0]
+		repoConf, present := s.repos[repoNames[0]]
+		if present {
+			langServerConfig := GetLangServerFromFileExt(repoConf, filePath)
+			if langServerConfig != nil {
+				langServer := s.langsrv[langServerConfig.Address]
+				symList, err := langServer.AllSymbols(&lngs.DocumentSymbolParams{
+					TextDocument: lngs.TextDocumentIdentifier{
+						URI: path.Join(repoConf.Path, filePath),
+					},
+				})
+				if err != nil {
+					symbolRanges = []lngs.Range{}
+				} else {
+					for _, item := range symList {
+						symbolRanges = append(symbolRanges, item.Location.TextRange)
+					}
+				}
+			}
+		}
+
+	}
+	fmt.Printf("list: %v\n", symbolRanges)
+	if len(symbolRanges) > 0 {
+		replyJSON(ctx, w, 200, symbolRanges)
+	} else {
+		replyJSON(ctx, w, 500, nil)
+	}
+}
+
 type handler func(c context.Context, w http.ResponseWriter, r *http.Request)
 
 const RequestTimeout = 8 * time.Second
@@ -288,9 +391,10 @@ func (s *server) Handler(f func(c context.Context, w http.ResponseWriter, r *htt
 
 func New(cfg *config.Config) (http.Handler, error) {
 	srv := &server{
-		config: cfg,
-		bk:     make(map[string]*Backend),
-		repos:  make(map[string]config.RepoConfig),
+		config:  cfg,
+		bk:      make(map[string]*Backend),
+		repos:   make(map[string]config.RepoConfig),
+		langsrv: make(map[string]LangServerClient),
 	}
 	srv.loadTemplates()
 
@@ -313,7 +417,30 @@ func New(cfg *config.Config) (http.Handler, error) {
 	}
 
 	for _, r := range srv.config.IndexConfig.Repositories {
+		//langServers := make([]config.LangServer, 0)
+		for _, langServer := range r.LangServers {
+			//if InitLangServer(langServer, r) {
+			//	langServers = append(langServers, langServer)
+			//}
+			client, err := CreateLangServerClient(langServer.Address)
+			if err != nil {
+				panic(err)
+			}
+
+			var initResult InitializeResult
+			initResult, err = client.Initialize(InitializeParams{
+				ProcessId:        nil,
+				OriginalRootPath: r.Path,
+				RootPath:         r.Path,
+				RootUri:          "file://" + r.Path,
+				Capabilities:     ClientCapabilities{},
+			})
+			fmt.Println(initResult)
+			srv.langsrv[langServer.Address] = client
+		}
+		//r.LangServers = langServers
 		srv.repos[r.Name] = r
+
 	}
 
 	m := pat.New()
@@ -329,6 +456,8 @@ func New(cfg *config.Config) (http.Handler, error) {
 
 	m.Add("GET", "/api/v1/search/:backend", srv.Handler(srv.ServeAPISearch))
 	m.Add("GET", "/api/v1/search/", srv.Handler(srv.ServeAPISearch))
+	m.Add("GET", "/api/v1/langserver/jumptodef", srv.Handler(srv.ServeJumpToDef))
+	m.Add("GET", "/api/v1/langserver/get_functions", srv.Handler(srv.ServeGetFunctions))
 
 	var h http.Handler = m
 

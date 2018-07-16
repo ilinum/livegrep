@@ -64,6 +64,7 @@ type directoryListEntry struct {
 }
 
 type fileViewerContext struct {
+	FilePath       string
 	PathSegments   []breadCrumbEntry
 	Repo           config.RepoConfig
 	Commit         string
@@ -226,6 +227,7 @@ func buildFileData(relativePath string, repo config.RepoConfig, commit string) (
 		}
 	} else if objectType == "blob" {
 		content, err := gitCatBlob(obj, repo.Path)
+
 		if err != nil {
 			return nil, err
 		}
@@ -267,6 +269,7 @@ func buildFileData(relativePath string, repo config.RepoConfig, commit string) (
 	}
 
 	return &fileViewerContext{
+		FilePath:       cleanPath,
 		PathSegments:   segments,
 		Repo:           repo,
 		Commit:         commit,
