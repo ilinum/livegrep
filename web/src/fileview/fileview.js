@@ -214,11 +214,21 @@ function init(initData) {
     });
   }
 
+  // compute the offset from the start of the row containing the click
+  function colForSelection(sel, row) {
+    // create a new range starting at the beginning of the row and going until the selection
+    const rangeBeforeClick = new Range();
+    rangeBeforeClick.setStart(row, 0);
+    rangeBeforeClick.setEnd(sel.anchorNode, sel.anchorOffset);
+    return rangeBeforeClick.toString().length;
+  }
+
   function triggerJumpToDef(event) {
       var info = getFileInfo();
       console.log(info)
       var curTag = event.target;
       while (!curTag.getAttribute("data-row")) {
+          console.log(curTag);
           const parentTag = curTag.parentNode;
           if (!parentTag || typeof parentTag.getAttribute !== 'function') {
               console.log("Click to definition failed: span tag with data-row not found");
@@ -228,7 +238,7 @@ function init(initData) {
       }
       const row = curTag.getAttribute("data-row");
 
-      const col = document.getSelection().anchorOffset;
+      const col = colForSelection(document.getSelection(), curTag);
 
       xhttp = new XMLHttpRequest();
       xhttp.onreadystatechange = function() {
@@ -246,7 +256,6 @@ function init(initData) {
   }
 
   function applyJumpToDefTags() {
-
       console.log("APPLYJUMPTODEF TAGS");
       const content = $('#source-code').html();
       if (!content) {
@@ -260,7 +269,7 @@ function init(initData) {
       }
 
       $('#source-code').html(newHtml);
-console.log($('#source-code').html());
+      console.log($('#source-code').html());
   }
 
   function processKeyEvent(event) {
