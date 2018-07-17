@@ -54,13 +54,6 @@ type server struct {
 	honey *libhoney.Builder
 }
 
-type LocationRequestParams struct {
-	RepoName string `json:"repo_name"`
-	FilePath string `json:"file_path"`
-	Row      int    `json:"row"`
-	Col      int    `json:"col"`
-}
-
 type GotoDefResponse struct {
 	URL string `json:"url"`
 }
@@ -318,7 +311,7 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 		docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
-		return nil, errors.New(fmt.Sprintf("No langserver running at address %s", l.Address))
+		return nil, errors.New(fmt.Sprintf("no langserver running at address %s", l.Address))
 	}
 	locations, err := langServer.JumpToDef(docPositionParams)
 	if err != nil {
@@ -326,7 +319,7 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 	}
 
 	if len(locations) == 0 {
-		return nil, errors.New("No locations for symbol.")
+		return nil, errors.New("no locations for symbol")
 	}
 
 	location := locations[0]
@@ -345,16 +338,16 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 	}, nil
 }
 
-func urlQueryToMap(queryParams url.Values, paramNames []string) (map[string]string, error) {
-	result := make(map[string]string, len(paramNames))
-	for _, paramName := range paramNames {
+func urlQueryToMap(queryParams url.Values, requiredParamNames []string) (map[string]string, error) {
+	result := make(map[string]string, len(requiredParamNames))
+	for _, paramName := range requiredParamNames {
 		if len(queryParams[paramName]) == 0 {
-			return nil, errors.New(fmt.Sprintf("Param %s is missing, provided: %+v",
+			return nil, errors.New(fmt.Sprintf("param %s is missing, provided: %+v",
 				paramName, queryParams))
 		}
 		if len(queryParams[paramName]) != 1 {
-			return nil, errors.New(fmt.Sprintf("Param %s is provided %d times, need 1",
-				len(queryParams[paramName])))
+			return nil, errors.New(fmt.Sprintf("param %s is provided %d times, need 1",
+				paramName, len(queryParams[paramName])))
 		}
 		result[paramName] = queryParams[paramName][0]
 	}
@@ -389,43 +382,6 @@ func buildURI(repoPath string, relativeFilePath string) string {
 	return "file://" + repoPath + "/" + relativeFilePath
 }
 
-func (s *server) ServeGetFunctions(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	params := r.URL.Query()
-	filePaths := params["file_path"]
-	repoNames := params["repo_name"]
-	symbolRanges := []langserver.Range{}
-
-	if len(filePaths) == 1 && len(repoNames) == 1 {
-		filePath := filePaths[0]
-		repoConf, present := s.repos[repoNames[0]]
-		if present {
-			langServerConfig := langserver.GetLangServerFromFileExt(repoConf, filePath)
-			if langServerConfig != nil {
-				langServer := s.langsrv[langServerConfig.Address]
-				symList, err := langServer.AllSymbols(&langserver.DocumentSymbolParams{
-					TextDocument: langserver.TextDocumentIdentifier{
-						URI: path.Join(repoConf.Path, filePath),
-					},
-				})
-				if err != nil {
-					symbolRanges = []langserver.Range{}
-				} else {
-					for _, item := range symList {
-						symbolRanges = append(symbolRanges, item.Location.TextRange)
-					}
-				}
-			}
-		}
-
-	}
-	fmt.Printf("list: %v\n", symbolRanges)
-	if len(symbolRanges) > 0 {
-		replyJSON(ctx, w, 200, symbolRanges)
-	} else {
-		replyJSON(ctx, w, 500, nil)
-	}
-}
-
 func (s *server) ServeHover(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	response, err := s.hover(r.URL.Query())
 	if err != nil {
@@ -449,14 +405,14 @@ func (s *server) hover(urlParams url.Values) (*langserver.Range, error) {
 		docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
-		return nil, errors.New(fmt.Sprintf("No langserver running at address %s", l.Address))
+		return nil, errors.New(fmt.Sprintf("no langserver running at address %s", l.Address))
 	}
 	hoverResponse, err := langServer.Hover(docPositionParams)
 	if err != nil {
 		return nil, err
 	}
 	if hoverResponse.TextRange == (langserver.Range{}) {
-		return nil, errors.New("No text range provided")
+		return nil, errors.New("no text range provided")
 	}
 	return &hoverResponse.TextRange, nil
 }
@@ -510,24 +466,21 @@ func New(cfg *config.Config) (http.Handler, error) {
 		for _, langServer := range r.LangServers {
 			client, err := langserver.CreateLangServerClient(langServer.Address)
 			if err != nil {
-				panic(err)
+				return nil, err
 			}
 
-			var initResult langserver.InitializeResult
 			initParams := langserver.InitializeParams{
 				ProcessId:        nil,
 				OriginalRootPath: r.Path,
 				RootUri:          "file://" + r.Path,
 				Capabilities:     langserver.ClientCapabilities{},
 			}
-			fmt.Println(initParams)
-			start := time.Now()
-			initResult, err = client.Initialize(initParams)
-			fmt.Printf("call to initialize took %s", time.Since(start))
-			fmt.Println(initResult)
+			_, err = client.Initialize(initParams)
+			if err != nil {
+				return nil, err
+			}
 			srv.langsrv[langServer.Address] = client
 		}
-		fmt.Printf("Created repo %s\n", r.Name)
 		srv.repos[r.Name] = r
 	}
 
@@ -546,7 +499,6 @@ func New(cfg *config.Config) (http.Handler, error) {
 	m.Add("GET", "/api/v1/search/", srv.Handler(srv.ServeAPISearch))
 	m.Add("GET", "/api/v1/langserver/jumptodef", srv.Handler(srv.ServeJumpToDef))
 	m.Add("GET", "/api/v1/langserver/hover", srv.Handler(srv.ServeHover))
-	m.Add("GET", "/api/v1/langserver/get_functions", srv.Handler(srv.ServeGetFunctions))
 
 	var h http.Handler = m
 

@@ -43,21 +43,12 @@ func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.L
 type LangServerClient interface {
 	Initialize(params InitializeParams) (InitializeResult, error)
 	JumpToDef(params *TextDocumentPositionParams) ([]Location, error)
-	AllSymbols(params *DocumentSymbolParams) (result []SymbolInformation, err error)
 	Hover(params *TextDocumentPositionParams) (HoverResponse, error)
 }
 
 type langServerClientImpl struct {
 	rpcClient *jsonrpc2.Conn
 	ctx       context.Context
-}
-
-type responseHandler struct {
-}
-
-func (r responseHandler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	// TODO
-	fmt.Println("Response handler called")
 }
 
 func CreateLangServerClient(address string) (client LangServerClient, err error) {
@@ -67,8 +58,7 @@ func CreateLangServerClient(address string) (client LangServerClient, err error)
 	if err != nil {
 		return
 	}
-	handler := responseHandler{}
-	rpcConn := jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(conn, codec), handler)
+	rpcConn := jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(conn, codec), nil)
 	client = &langServerClientImpl{
 		rpcClient: rpcConn,
 		ctx:       ctx,
@@ -86,11 +76,6 @@ func (ls *langServerClientImpl) Initialize(params InitializeParams) (result Init
 
 func (ls *langServerClientImpl) JumpToDef(params *TextDocumentPositionParams) (result []Location, err error) {
 	err = ls.invoke("textDocument/definition", params, &result)
-	return
-}
-
-func (ls *langServerClientImpl) AllSymbols(params *DocumentSymbolParams) (result []SymbolInformation, err error) {
-	err = ls.invoke("textDocument/documentSymbol", params, &result)
 	return
 }
 
