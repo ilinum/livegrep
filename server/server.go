@@ -44,7 +44,7 @@ type server struct {
 	bk          map[string]*Backend
 	bkOrder     []string
 	repos       map[string]config.RepoConfig
-	langsrv     map[string]langserver.LangServerClient
+	langsrv     map[string]langserver.Client
 	inner       http.Handler
 	Templates   map[string]*template.Template
 	OpenSearch  *texttemplate.Template
@@ -307,8 +307,12 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := langserver.GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
-		docPositionParams.TextDocument.URI)
+	repoName := params[repoNameParamName]
+	repo, err := getRepoByName(s.config.IndexConfig.Repositories, repoName)
+	if err != nil {
+		return nil, err
+	}
+	l := langserver.GetLangServerFromFileExt(repo, docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
 		return nil, errors.New(fmt.Sprintf("no langserver running at address %s", l.Address))
@@ -326,16 +330,24 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 
 	targetPath := strings.TrimPrefix(location.URI, "file://")
 	lineNum := location.TextRange.Start.Line
-	repoPath := s.config.IndexConfig.Repositories[0].Path
-	relPath, err := filepath.Rel(repoPath, targetPath)
+	relPath, err := filepath.Rel(repo.Path, targetPath)
 	if err != nil {
 		return nil, err
 	}
 	// Add 1 because URL is 1-indexed and language server is 0-indexed.
 	lineNum += 1
 	return &GotoDefResponse{
-		URL: fmt.Sprintf("/view/%s/%s#L%d", params[repoNameParamName], relPath, lineNum),
+		URL: fmt.Sprintf("/view/%s/%s#L%d", repoName, relPath, lineNum),
 	}, nil
+}
+
+func getRepoByName(repos []config.RepoConfig, repoName string) (*config.RepoConfig, error) {
+	for _, repo := range repos {
+		if repo.Name == repoName {
+			return &repo, nil
+		}
+	}
+	return nil, errors.New(fmt.Sprintf("repo with name %s not found", repoName))
 }
 
 func urlQueryToMap(queryParams url.Values, requiredParamNames []string) (map[string]string, error) {
@@ -364,11 +376,14 @@ func (s *server) parseDocPositionParams(params map[string]string) (*langserver.T
 	if err != nil {
 		return nil, err
 	}
+	repo, err := getRepoByName(s.config.IndexConfig.Repositories, params[repoNameParamName])
+	if err != nil {
+		return nil, err
+	}
 
 	positionParams := &langserver.TextDocumentPositionParams{
 		TextDocument: langserver.TextDocumentIdentifier{
-			// todo(stas): do not hardcode Repositories[0].
-			URI: buildURI(s.config.IndexConfig.Repositories[0].Path, params[filePathParamName]),
+			URI: buildURI(repo.Path, params[filePathParamName]),
 		},
 		Position: langserver.Position{
 			Line:      row,
@@ -401,8 +416,11 @@ func (s *server) hover(urlParams url.Values) (*langserver.Range, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := langserver.GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
-		docPositionParams.TextDocument.URI)
+	repo, err := getRepoByName(s.config.IndexConfig.Repositories, params[repoNameParamName])
+	if err != nil {
+		return nil, err
+	}
+	l := langserver.GetLangServerFromFileExt(repo, docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
 		return nil, errors.New(fmt.Sprintf("no langserver running at address %s", l.Address))
@@ -440,7 +458,7 @@ func New(cfg *config.Config) (http.Handler, error) {
 		config:  cfg,
 		bk:      make(map[string]*Backend),
 		repos:   make(map[string]config.RepoConfig),
-		langsrv: make(map[string]langserver.LangServerClient),
+		langsrv: make(map[string]langserver.Client),
 	}
 	srv.loadTemplates()
 

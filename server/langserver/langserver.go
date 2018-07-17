@@ -28,7 +28,7 @@ type InitializeResult struct {
 	Capabilities ServerCapabilities `json:"capabilities"`
 }
 
-func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.LangServer {
+func GetLangServerFromFileExt(repo *config.RepoConfig, filePath string) *config.LangServer {
 	fileExt := filepath.Ext(filePath)
 	for _, langServer := range repo.LangServers {
 		for _, ext := range langServer.Extensions {
@@ -40,7 +40,7 @@ func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.L
 	return nil
 }
 
-type LangServerClient interface {
+type Client interface {
 	Initialize(params InitializeParams) (InitializeResult, error)
 	JumpToDef(params *TextDocumentPositionParams) ([]Location, error)
 	Hover(params *TextDocumentPositionParams) (HoverResponse, error)
@@ -51,7 +51,7 @@ type langServerClientImpl struct {
 	ctx       context.Context
 }
 
-func CreateLangServerClient(address string) (client LangServerClient, err error) {
+func CreateLangServerClient(address string) (client Client, err error) {
 	ctx := context.Background()
 	codec := jsonrpc2.VSCodeObjectCodec{}
 	conn, err := net.Dial("tcp", address)
