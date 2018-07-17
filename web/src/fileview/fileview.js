@@ -218,16 +218,16 @@ function init(initData) {
       var info = getFileInfo();
       console.log(info)
       var curTag = event.target;
-      while (!curTag.getAttribute("row")) {
-console.log(curTag);
+      while (!curTag.getAttribute("data-row")) {
           const parentTag = curTag.parentNode;
           if (!parentTag || typeof parentTag.getAttribute !== 'function') {
-              console.log("Error: span tag with row not found");
+              console.log("Click to definition failed: span tag with data-row not found");
               return;
           }
           curTag = parentTag;
       }
-      const row = curTag.getAttribute("row");
+      const row = curTag.getAttribute("data-row");
+
       const col = document.getSelection().anchorOffset;
 
       xhttp = new XMLHttpRequest();
@@ -260,7 +260,7 @@ console.log(curTag);
       }
 
       $('#source-code').html(newHtml);
-
+console.log($('#source-code').html());
   }
 
   function processKeyEvent(event) {
