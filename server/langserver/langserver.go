@@ -1,12 +1,10 @@
-package server
+package langserver
 
 import (
 	"context"
 	"fmt"
 
 	"net"
-
-	lngs "github.com/livegrep/livegrep/server/langserver"
 
 	"github.com/livegrep/livegrep/server/config"
 	"github.com/sourcegraph/jsonrpc2"
@@ -30,7 +28,7 @@ type InitializeResult struct {
 	Capabilities ServerCapabilities `json:"capabilities"`
 }
 
-func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.LangServer {
+func GetLangServerFromFileExt(repo *config.RepoConfig, filePath string) *config.LangServer {
 	fileExt := filepath.Ext(filePath)
 	for _, langServer := range repo.LangServers {
 		for _, ext := range langServer.Extensions {
@@ -42,11 +40,10 @@ func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.L
 	return nil
 }
 
-type LangServerClient interface {
+type Client interface {
 	Initialize(params InitializeParams) (InitializeResult, error)
-	JumpToDef(params *lngs.TextDocumentPositionParams) ([]lngs.Location, error)
-	AllSymbols(params *lngs.DocumentSymbolParams) (result []lngs.SymbolInformation, err error)
-	Hover(params *lngs.TextDocumentPositionParams) (lngs.HoverResponse, error)
+	JumpToDef(params *TextDocumentPositionParams) ([]Location, error)
+	Hover(params *TextDocumentPositionParams) (HoverResponse, error)
 }
 
 type langServerClientImpl struct {
@@ -54,23 +51,14 @@ type langServerClientImpl struct {
 	ctx       context.Context
 }
 
-type responseHandler struct {
-}
-
-func (r responseHandler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	// TODO
-	fmt.Println("Response handler called")
-}
-
-func CreateLangServerClient(address string) (client LangServerClient, err error) {
+func CreateLangServerClient(address string) (client Client, err error) {
 	ctx := context.Background()
 	codec := jsonrpc2.VSCodeObjectCodec{}
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return
 	}
-	handler := responseHandler{}
-	rpcConn := jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(conn, codec), handler)
+	rpcConn := jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(conn, codec), nil)
 	client = &langServerClientImpl{
 		rpcClient: rpcConn,
 		ctx:       ctx,
@@ -86,19 +74,14 @@ func (ls *langServerClientImpl) Initialize(params InitializeParams) (result Init
 	return
 }
 
-func (ls *langServerClientImpl) JumpToDef(params *lngs.TextDocumentPositionParams) (result []lngs.Location, err error) {
+func (ls *langServerClientImpl) JumpToDef(params *TextDocumentPositionParams) (result []Location, err error) {
 	err = ls.invoke("textDocument/definition", params, &result)
 	return
 }
 
-func (ls *langServerClientImpl) AllSymbols(params *lngs.DocumentSymbolParams) (result []lngs.SymbolInformation, err error) {
-	err = ls.invoke("textDocument/documentSymbol", params, &result)
-	return
-}
-
 func (ls *langServerClientImpl) Hover(
-	params *lngs.TextDocumentPositionParams,
-) (result lngs.HoverResponse, err error) {
+	params *TextDocumentPositionParams,
+) (result HoverResponse, err error) {
 	err = ls.invoke("textDocument/hover", params, result)
 	return
 }

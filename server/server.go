@@ -15,7 +15,7 @@ import (
 	"github.com/bmizerany/pat"
 	"github.com/honeycombio/libhoney-go"
 
-	lngs "github.com/livegrep/livegrep/server/langserver"
+	"github.com/livegrep/livegrep/server/langserver"
 
 	"path/filepath"
 	"strings"
@@ -44,7 +44,7 @@ type server struct {
 	bk          map[string]*Backend
 	bkOrder     []string
 	repos       map[string]config.RepoConfig
-	langsrv     map[string]LangServerClient
+	langsrv     map[string]langserver.Client
 	inner       http.Handler
 	Templates   map[string]*template.Template
 	OpenSearch  *texttemplate.Template
@@ -52,13 +52,6 @@ type server struct {
 	Layout      *template.Template
 
 	honey *libhoney.Builder
-}
-
-type LocationRequestParams struct {
-	RepoName string `json:"repo_name"`
-	FilePath string `json:"file_path"`
-	Row      int    `json:"row"`
-	Col      int    `json:"col"`
 }
 
 type GotoDefResponse struct {
@@ -314,11 +307,15 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
-		docPositionParams.TextDocument.URI)
+	repoName := params[repoNameParamName]
+	repo, err := getRepoByName(s.config.IndexConfig.Repositories, repoName)
+	if err != nil {
+		return nil, err
+	}
+	l := langserver.GetLangServerFromFileExt(repo, docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
-		return nil, errors.New(fmt.Sprintf("No langserver running at address %s", l.Address))
+		return nil, errors.New(fmt.Sprintf("no langserver running at address %s", l.Address))
 	}
 	locations, err := langServer.JumpToDef(docPositionParams)
 	if err != nil {
@@ -326,42 +323,50 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 	}
 
 	if len(locations) == 0 {
-		return nil, errors.New("No locations for symbol.")
+		return nil, errors.New("no locations for symbol")
 	}
 
 	location := locations[0]
 
 	targetPath := strings.TrimPrefix(location.URI, "file://")
 	lineNum := location.TextRange.Start.Line
-	repoPath := s.config.IndexConfig.Repositories[0].Path
-	relPath, err := filepath.Rel(repoPath, targetPath)
+	relPath, err := filepath.Rel(repo.Path, targetPath)
 	if err != nil {
 		return nil, err
 	}
 	// Add 1 because URL is 1-indexed and language server is 0-indexed.
 	lineNum += 1
 	return &GotoDefResponse{
-		URL: fmt.Sprintf("/view/%s/%s#L%d", params[repoNameParamName], relPath, lineNum),
+		URL: fmt.Sprintf("/view/%s/%s#L%d", repoName, relPath, lineNum),
 	}, nil
 }
 
-func urlQueryToMap(queryParams url.Values, paramNames []string) (map[string]string, error) {
-	result := make(map[string]string, len(paramNames))
-	for _, paramName := range paramNames {
+func getRepoByName(repos []config.RepoConfig, repoName string) (*config.RepoConfig, error) {
+	for _, repo := range repos {
+		if repo.Name == repoName {
+			return &repo, nil
+		}
+	}
+	return nil, errors.New(fmt.Sprintf("repo with name %s not found", repoName))
+}
+
+func urlQueryToMap(queryParams url.Values, requiredParamNames []string) (map[string]string, error) {
+	result := make(map[string]string, len(requiredParamNames))
+	for _, paramName := range requiredParamNames {
 		if len(queryParams[paramName]) == 0 {
-			return nil, errors.New(fmt.Sprintf("Param %s is missing, provided: %+v",
+			return nil, errors.New(fmt.Sprintf("param %s is missing, provided: %+v",
 				paramName, queryParams))
 		}
 		if len(queryParams[paramName]) != 1 {
-			return nil, errors.New(fmt.Sprintf("Param %s is provided %d times, need 1",
-				len(queryParams[paramName])))
+			return nil, errors.New(fmt.Sprintf("param %s is provided %d times, need 1",
+				paramName, len(queryParams[paramName])))
 		}
 		result[paramName] = queryParams[paramName][0]
 	}
 	return result, nil
 }
 
-func (s *server) parseDocPositionParams(params map[string]string) (*lngs.TextDocumentPositionParams, error) {
+func (s *server) parseDocPositionParams(params map[string]string) (*langserver.TextDocumentPositionParams, error) {
 	// Assume the params are already validated.
 	row, err := strconv.Atoi(params[rowParamName])
 	if err != nil {
@@ -371,13 +376,16 @@ func (s *server) parseDocPositionParams(params map[string]string) (*lngs.TextDoc
 	if err != nil {
 		return nil, err
 	}
+	repo, err := getRepoByName(s.config.IndexConfig.Repositories, params[repoNameParamName])
+	if err != nil {
+		return nil, err
+	}
 
-	positionParams := &lngs.TextDocumentPositionParams{
-		TextDocument: lngs.TextDocumentIdentifier{
-			// todo(stas): do not hardcode Repositories[0].
-			URI: buildURI(s.config.IndexConfig.Repositories[0].Path, params[filePathParamName]),
+	positionParams := &langserver.TextDocumentPositionParams{
+		TextDocument: langserver.TextDocumentIdentifier{
+			URI: buildURI(repo.Path, params[filePathParamName]),
 		},
-		Position: lngs.Position{
+		Position: langserver.Position{
 			Line:      row,
 			Character: col,
 		},
@@ -389,43 +397,6 @@ func buildURI(repoPath string, relativeFilePath string) string {
 	return "file://" + repoPath + "/" + relativeFilePath
 }
 
-func (s *server) ServeGetFunctions(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	params := r.URL.Query()
-	filePaths := params["file_path"]
-	repoNames := params["repo_name"]
-	symbolRanges := []lngs.Range{}
-
-	if len(filePaths) == 1 && len(repoNames) == 1 {
-		filePath := filePaths[0]
-		repoConf, present := s.repos[repoNames[0]]
-		if present {
-			langServerConfig := GetLangServerFromFileExt(repoConf, filePath)
-			if langServerConfig != nil {
-				langServer := s.langsrv[langServerConfig.Address]
-				symList, err := langServer.AllSymbols(&lngs.DocumentSymbolParams{
-					TextDocument: lngs.TextDocumentIdentifier{
-						URI: path.Join(repoConf.Path, filePath),
-					},
-				})
-				if err != nil {
-					symbolRanges = []lngs.Range{}
-				} else {
-					for _, item := range symList {
-						symbolRanges = append(symbolRanges, item.Location.TextRange)
-					}
-				}
-			}
-		}
-
-	}
-	fmt.Printf("list: %v\n", symbolRanges)
-	if len(symbolRanges) > 0 {
-		replyJSON(ctx, w, 200, symbolRanges)
-	} else {
-		replyJSON(ctx, w, 500, nil)
-	}
-}
-
 func (s *server) ServeHover(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	response, err := s.hover(r.URL.Query())
 	if err != nil {
@@ -435,7 +406,7 @@ func (s *server) ServeHover(ctx context.Context, w http.ResponseWriter, r *http.
 	replyJSON(ctx, w, 200, response)
 }
 
-func (s *server) hover(urlParams url.Values) (*lngs.Range, error) {
+func (s *server) hover(urlParams url.Values) (*langserver.Range, error) {
 	allParamNames := []string{filePathParamName, repoNameParamName, rowParamName, colParamName}
 	params, err := urlQueryToMap(urlParams, allParamNames)
 	if err != nil {
@@ -445,18 +416,21 @@ func (s *server) hover(urlParams url.Values) (*lngs.Range, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
-		docPositionParams.TextDocument.URI)
+	repo, err := getRepoByName(s.config.IndexConfig.Repositories, params[repoNameParamName])
+	if err != nil {
+		return nil, err
+	}
+	l := langserver.GetLangServerFromFileExt(repo, docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
-		return nil, errors.New(fmt.Sprintf("No langserver running at address %s", l.Address))
+		return nil, errors.New(fmt.Sprintf("no langserver running at address %s", l.Address))
 	}
 	hoverResponse, err := langServer.Hover(docPositionParams)
 	if err != nil {
 		return nil, err
 	}
-	if hoverResponse.TextRange == (lngs.Range{}) {
-		return nil, errors.New("No text range provided")
+	if hoverResponse.TextRange == (langserver.Range{}) {
+		return nil, errors.New("no text range provided")
 	}
 	return &hoverResponse.TextRange, nil
 }
@@ -484,7 +458,7 @@ func New(cfg *config.Config) (http.Handler, error) {
 		config:  cfg,
 		bk:      make(map[string]*Backend),
 		repos:   make(map[string]config.RepoConfig),
-		langsrv: make(map[string]LangServerClient),
+		langsrv: make(map[string]langserver.Client),
 	}
 	srv.loadTemplates()
 
@@ -508,26 +482,23 @@ func New(cfg *config.Config) (http.Handler, error) {
 
 	for _, r := range srv.config.IndexConfig.Repositories {
 		for _, langServer := range r.LangServers {
-			client, err := CreateLangServerClient(langServer.Address)
+			client, err := langserver.CreateLangServerClient(langServer.Address)
 			if err != nil {
-				panic(err)
+				return nil, err
 			}
 
-			var initResult InitializeResult
-			initParams := InitializeParams{
+			initParams := langserver.InitializeParams{
 				ProcessId:        nil,
 				OriginalRootPath: r.Path,
 				RootUri:          "file://" + r.Path,
-				Capabilities:     ClientCapabilities{},
+				Capabilities:     langserver.ClientCapabilities{},
 			}
-			fmt.Println(initParams)
-			start := time.Now()
-			initResult, err = client.Initialize(initParams)
-			fmt.Printf("call to initialize took %s", time.Since(start))
-			fmt.Println(initResult)
+			_, err = client.Initialize(initParams)
+			if err != nil {
+				return nil, err
+			}
 			srv.langsrv[langServer.Address] = client
 		}
-		fmt.Printf("Created repo %s\n", r.Name)
 		srv.repos[r.Name] = r
 	}
 
@@ -545,7 +516,7 @@ func New(cfg *config.Config) (http.Handler, error) {
 	m.Add("GET", "/api/v1/search/:backend", srv.Handler(srv.ServeAPISearch))
 	m.Add("GET", "/api/v1/search/", srv.Handler(srv.ServeAPISearch))
 	m.Add("GET", "/api/v1/langserver/jumptodef", srv.Handler(srv.ServeJumpToDef))
-	m.Add("GET", "/api/v1/langserver/get_functions", srv.Handler(srv.ServeGetFunctions))
+	m.Add("GET", "/api/v1/langserver/hover", srv.Handler(srv.ServeHover))
 
 	var h http.Handler = m
 
