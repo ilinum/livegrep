@@ -1,12 +1,10 @@
-package server
+package langserver
 
 import (
 	"context"
 	"fmt"
 
 	"net"
-
-	lngs "github.com/livegrep/livegrep/server/langserver"
 
 	"github.com/livegrep/livegrep/server/config"
 	"github.com/sourcegraph/jsonrpc2"
@@ -44,9 +42,9 @@ func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.L
 
 type LangServerClient interface {
 	Initialize(params InitializeParams) (InitializeResult, error)
-	JumpToDef(params *lngs.TextDocumentPositionParams) ([]lngs.Location, error)
-	AllSymbols(params *lngs.DocumentSymbolParams) (result []lngs.SymbolInformation, err error)
-	Hover(params *lngs.TextDocumentPositionParams) (lngs.HoverResponse, error)
+	JumpToDef(params *TextDocumentPositionParams) ([]Location, error)
+	AllSymbols(params *DocumentSymbolParams) (result []SymbolInformation, err error)
+	Hover(params *TextDocumentPositionParams) (HoverResponse, error)
 }
 
 type langServerClientImpl struct {
@@ -86,19 +84,19 @@ func (ls *langServerClientImpl) Initialize(params InitializeParams) (result Init
 	return
 }
 
-func (ls *langServerClientImpl) JumpToDef(params *lngs.TextDocumentPositionParams) (result []lngs.Location, err error) {
+func (ls *langServerClientImpl) JumpToDef(params *TextDocumentPositionParams) (result []Location, err error) {
 	err = ls.invoke("textDocument/definition", params, &result)
 	return
 }
 
-func (ls *langServerClientImpl) AllSymbols(params *lngs.DocumentSymbolParams) (result []lngs.SymbolInformation, err error) {
+func (ls *langServerClientImpl) AllSymbols(params *DocumentSymbolParams) (result []SymbolInformation, err error) {
 	err = ls.invoke("textDocument/documentSymbol", params, &result)
 	return
 }
 
 func (ls *langServerClientImpl) Hover(
-	params *lngs.TextDocumentPositionParams,
-) (result lngs.HoverResponse, err error) {
+	params *TextDocumentPositionParams,
+) (result HoverResponse, err error) {
 	err = ls.invoke("textDocument/hover", params, result)
 	return
 }

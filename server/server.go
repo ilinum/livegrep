@@ -15,7 +15,7 @@ import (
 	"github.com/bmizerany/pat"
 	"github.com/honeycombio/libhoney-go"
 
-	lngs "github.com/livegrep/livegrep/server/langserver"
+	"github.com/livegrep/livegrep/server/langserver"
 
 	"path/filepath"
 	"strings"
@@ -44,7 +44,7 @@ type server struct {
 	bk          map[string]*Backend
 	bkOrder     []string
 	repos       map[string]config.RepoConfig
-	langsrv     map[string]LangServerClient
+	langsrv     map[string]langserver.LangServerClient
 	inner       http.Handler
 	Templates   map[string]*template.Template
 	OpenSearch  *texttemplate.Template
@@ -314,7 +314,7 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
+	l := langserver.GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
 		docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
@@ -361,7 +361,7 @@ func urlQueryToMap(queryParams url.Values, paramNames []string) (map[string]stri
 	return result, nil
 }
 
-func (s *server) parseDocPositionParams(params map[string]string) (*lngs.TextDocumentPositionParams, error) {
+func (s *server) parseDocPositionParams(params map[string]string) (*langserver.TextDocumentPositionParams, error) {
 	// Assume the params are already validated.
 	row, err := strconv.Atoi(params[rowParamName])
 	if err != nil {
@@ -372,12 +372,12 @@ func (s *server) parseDocPositionParams(params map[string]string) (*lngs.TextDoc
 		return nil, err
 	}
 
-	positionParams := &lngs.TextDocumentPositionParams{
-		TextDocument: lngs.TextDocumentIdentifier{
+	positionParams := &langserver.TextDocumentPositionParams{
+		TextDocument: langserver.TextDocumentIdentifier{
 			// todo(stas): do not hardcode Repositories[0].
 			URI: buildURI(s.config.IndexConfig.Repositories[0].Path, params[filePathParamName]),
 		},
-		Position: lngs.Position{
+		Position: langserver.Position{
 			Line:      row,
 			Character: col,
 		},
@@ -393,22 +393,22 @@ func (s *server) ServeGetFunctions(ctx context.Context, w http.ResponseWriter, r
 	params := r.URL.Query()
 	filePaths := params["file_path"]
 	repoNames := params["repo_name"]
-	symbolRanges := []lngs.Range{}
+	symbolRanges := []langserver.Range{}
 
 	if len(filePaths) == 1 && len(repoNames) == 1 {
 		filePath := filePaths[0]
 		repoConf, present := s.repos[repoNames[0]]
 		if present {
-			langServerConfig := GetLangServerFromFileExt(repoConf, filePath)
+			langServerConfig := langserver.GetLangServerFromFileExt(repoConf, filePath)
 			if langServerConfig != nil {
 				langServer := s.langsrv[langServerConfig.Address]
-				symList, err := langServer.AllSymbols(&lngs.DocumentSymbolParams{
-					TextDocument: lngs.TextDocumentIdentifier{
+				symList, err := langServer.AllSymbols(&langserver.DocumentSymbolParams{
+					TextDocument: langserver.TextDocumentIdentifier{
 						URI: path.Join(repoConf.Path, filePath),
 					},
 				})
 				if err != nil {
-					symbolRanges = []lngs.Range{}
+					symbolRanges = []langserver.Range{}
 				} else {
 					for _, item := range symList {
 						symbolRanges = append(symbolRanges, item.Location.TextRange)
@@ -435,7 +435,7 @@ func (s *server) ServeHover(ctx context.Context, w http.ResponseWriter, r *http.
 	replyJSON(ctx, w, 200, response)
 }
 
-func (s *server) hover(urlParams url.Values) (*lngs.Range, error) {
+func (s *server) hover(urlParams url.Values) (*langserver.Range, error) {
 	allParamNames := []string{filePathParamName, repoNameParamName, rowParamName, colParamName}
 	params, err := urlQueryToMap(urlParams, allParamNames)
 	if err != nil {
@@ -445,7 +445,7 @@ func (s *server) hover(urlParams url.Values) (*lngs.Range, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
+	l := langserver.GetLangServerFromFileExt(s.config.IndexConfig.Repositories[0],
 		docPositionParams.TextDocument.URI)
 	langServer := s.langsrv[l.Address]
 	if langServer == nil {
@@ -455,7 +455,7 @@ func (s *server) hover(urlParams url.Values) (*lngs.Range, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hoverResponse.TextRange == (lngs.Range{}) {
+	if hoverResponse.TextRange == (langserver.Range{}) {
 		return nil, errors.New("No text range provided")
 	}
 	return &hoverResponse.TextRange, nil
@@ -484,7 +484,7 @@ func New(cfg *config.Config) (http.Handler, error) {
 		config:  cfg,
 		bk:      make(map[string]*Backend),
 		repos:   make(map[string]config.RepoConfig),
-		langsrv: make(map[string]LangServerClient),
+		langsrv: make(map[string]langserver.LangServerClient),
 	}
 	srv.loadTemplates()
 
@@ -508,17 +508,17 @@ func New(cfg *config.Config) (http.Handler, error) {
 
 	for _, r := range srv.config.IndexConfig.Repositories {
 		for _, langServer := range r.LangServers {
-			client, err := CreateLangServerClient(langServer.Address)
+			client, err := langserver.CreateLangServerClient(langServer.Address)
 			if err != nil {
 				panic(err)
 			}
 
-			var initResult InitializeResult
-			initParams := InitializeParams{
+			var initResult langserver.InitializeResult
+			initParams := langserver.InitializeParams{
 				ProcessId:        nil,
 				OriginalRootPath: r.Path,
 				RootUri:          "file://" + r.Path,
-				Capabilities:     ClientCapabilities{},
+				Capabilities:     langserver.ClientCapabilities{},
 			}
 			fmt.Println(initParams)
 			start := time.Now()
