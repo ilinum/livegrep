@@ -240,8 +240,12 @@ function init(initData) {
   }
 
   function applyJumpToDefTags() {
+
       console.log("APPLYJUMPTODEF TAGS");
-      const content = $('#source-code').text().replace(/[<]/g, "&lt;").replace(/[>]/g, "&gt;");
+      const content = $('#source-code').html();
+      if (!content) {
+          return;
+      }
       const contentArr = content.split("\n");
       var newHtml = "";
 
@@ -250,7 +254,6 @@ function init(initData) {
       }
 
       $('#source-code').html(newHtml);
-      // hljs.highlightBlock($('#source-code')[0]);
 
   }
 
@@ -361,7 +364,7 @@ function init(initData) {
       // Filter out key events when the user has focused an input field.
       if($(event.target).is('input,textarea'))
         return;
-      if (event.which === 17) {
+      if (event.which === KeyCodes.COMMAND) {
         isCmdDown = true;
       }
       // Filter out key if a modifier is pressed.
