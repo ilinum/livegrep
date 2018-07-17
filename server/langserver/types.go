@@ -35,3 +35,7 @@ type DocumentSymbolParams struct {
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 }
 
+type HoverResponse struct {
+	MarkedString string `json:"contents"`
+	TextRange    Range  `json:"range,omitempty"`
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/livegrep/livegrep/server/config"
 	"github.com/sourcegraph/jsonrpc2"
 	"path/filepath"
+	"time"
 )
 
 type ClientCapabilities struct{}
@@ -31,12 +32,8 @@ type InitializeResult struct {
 
 func GetLangServerFromFileExt(repo config.RepoConfig, filePath string) *config.LangServer {
 	fileExt := filepath.Ext(filePath)
-	fmt.Println("fileExt", fileExt)
-	fmt.Println("repo", repo)
 	for _, langServer := range repo.LangServers {
-		fmt.Println(langServer)
 		for _, ext := range langServer.Extensions {
-			fmt.Println("ext", ext)
 			if ext == fileExt {
 				return &langServer
 			}
@@ -49,6 +46,7 @@ type LangServerClient interface {
 	Initialize(params InitializeParams) (InitializeResult, error)
 	JumpToDef(params *lngs.TextDocumentPositionParams) ([]lngs.Location, error)
 	AllSymbols(params *lngs.DocumentSymbolParams) (result []lngs.SymbolInformation, err error)
+	Hover(params *lngs.TextDocumentPositionParams) (lngs.HoverResponse, error)
 }
 
 type langServerClientImpl struct {
@@ -65,7 +63,6 @@ func (r responseHandler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *j
 }
 
 func CreateLangServerClient(address string) (client LangServerClient, err error) {
-	fmt.Println("create lang server client")
 	ctx := context.Background()
 	codec := jsonrpc2.VSCodeObjectCodec{}
 	conn, err := net.Dial("tcp", address)
@@ -78,30 +75,37 @@ func CreateLangServerClient(address string) (client LangServerClient, err error)
 		rpcClient: rpcConn,
 		ctx:       ctx,
 	}
-	fmt.Println("done creating lang server client")
 	return client, nil
 }
 
-func (c *langServerClientImpl) Initialize(params InitializeParams) (result InitializeResult, err error) {
-	fmt.Println("Initialize")
-	err = c.rpcClient.Call(c.ctx, "initialize", params, &result)
-	fmt.Println("Done initializing")
+func (ls *langServerClientImpl) Initialize(params InitializeParams) (result InitializeResult, err error) {
+	err = ls.invoke("initialize", params, &result)
 	if err != nil {
-		c.rpcClient.Call(c.ctx, "initialized", nil, nil)
+		ls.invoke("initialized", nil, nil)
 	}
 	return
 }
 
-func (c *langServerClientImpl) JumpToDef(params *lngs.TextDocumentPositionParams) (result []lngs.Location, err error) {
-	fmt.Println("GotoDefRequest")
-	err = c.rpcClient.Call(c.ctx, "textDocument/definition", params, &result)
-	fmt.Println("Done GotoDefRequest")
+func (ls *langServerClientImpl) JumpToDef(params *lngs.TextDocumentPositionParams) (result []lngs.Location, err error) {
+	err = ls.invoke("textDocument/definition", params, &result)
 	return
 }
 
-func (c *langServerClientImpl) AllSymbols(params *lngs.DocumentSymbolParams) (result []lngs.SymbolInformation, err error) {
-	fmt.Printf("Symbol Search %+v", params)
-	err = c.rpcClient.Call(c.ctx, "textDocument/documentSymbol", params, &result)
-	fmt.Println("Symbol search done")
+func (ls *langServerClientImpl) AllSymbols(params *lngs.DocumentSymbolParams) (result []lngs.SymbolInformation, err error) {
+	err = ls.invoke("textDocument/documentSymbol", params, &result)
 	return
+}
+
+func (ls *langServerClientImpl) Hover(
+	params *lngs.TextDocumentPositionParams,
+) (result lngs.HoverResponse, err error) {
+	err = ls.invoke("textDocument/hover", params, result)
+	return
+}
+
+func (ls *langServerClientImpl) invoke(method string, params interface{}, result interface{}) error {
+	start := time.Now()
+	err := ls.rpcClient.Call(ls.ctx, method, params, &result)
+	fmt.Printf("%s returned in %s\nResult: %+v, err: %+v\n", method, time.Since(start), result, err)
+	return err
 }
