@@ -422,7 +422,7 @@ function init(initData) {
   setTimeout(function() {
     lineNumberContainer.css({display: 'block'});
     initializePage();
-  }, 1);
+  }, 100);
 }
 
 module.exports = {
