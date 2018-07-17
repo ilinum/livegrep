@@ -214,31 +214,28 @@ function init(initData) {
     });
   }
 
-  // compute the offset from the start of the row containing the click
-  function colForSelection(sel, row) {
-    // create a new range starting at the beginning of the row and going until the selection
+  // compute the offset from the start of the parent containing the click
+  function beforeSelection(sel, parentNode) {
+    // create a new range starting at the beginning of the parent and going until the selection
     const rangeBeforeClick = new Range();
-    rangeBeforeClick.setStart(row, 0);
+    rangeBeforeClick.setStart(parentNode, 0);
     rangeBeforeClick.setEnd(sel.anchorNode, sel.anchorOffset);
-    return rangeBeforeClick.toString().length;
+    return rangeBeforeClick.toString();
   }
 
   function triggerJumpToDef(event) {
       var info = getFileInfo();
-      console.log(info)
-      var curTag = event.target;
-      while (!curTag.getAttribute("data-row")) {
-          console.log(curTag);
-          const parentTag = curTag.parentNode;
-          if (!parentTag || typeof parentTag.getAttribute !== 'function') {
-              console.log("Click to definition failed: span tag with data-row not found");
-              return;
-          }
-          curTag = parentTag;
-      }
-      const row = curTag.getAttribute("data-row");
+      console.log(info);
 
-      const col = colForSelection(document.getSelection(), curTag);
+      const stringBefore = beforeSelection(
+          document.getSelection(),
+          document.getElementById('source-code')
+      );
+
+      const rows = stringBefore.split('\n');
+      // rows are zero-indexed
+      const row = rows.length - 1;
+      const col = rows[row].length;
 
       xhttp = new XMLHttpRequest();
       xhttp.onreadystatechange = function() {
@@ -253,23 +250,6 @@ function init(initData) {
       console.log("sending request to /api/v1/langserver/jumptodef?repo_name=" + info.repoName + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
       xhttp.open("GET", "/api/v1/langserver/jumptodef?repo_name=" + info.repoName + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
       xhttp.send()
-  }
-
-  function applyJumpToDefTags() {
-      console.log("APPLYJUMPTODEF TAGS");
-      const content = $('#source-code').html();
-      if (!content) {
-          return;
-      }
-      const contentArr = content.split("\n");
-      var newHtml = "";
-
-      for (var i = 0; i < contentArr.length; i++) {
-          newHtml += "<span data-row=" + i + ">" + contentArr[i] + "</span>\n";
-      }
-
-      $('#source-code').html(newHtml);
-      console.log($('#source-code').html());
   }
 
   function processKeyEvent(event) {
@@ -354,10 +334,6 @@ function init(initData) {
     // Initial range detection for when the page is loaded
     handleHashChange();
 
-    // Send request to find and add appriopriate declarations for all function in code
-    // decorateFunctions().
-    applyJumpToDefTags();
-
     // Allow shift clicking links to expand the highlight range
     lineNumberContainer.on('click', 'a', function(event) {
       event.preventDefault();
@@ -422,7 +398,7 @@ function init(initData) {
   setTimeout(function() {
     lineNumberContainer.css({display: 'block'});
     initializePage();
-  }, 100);
+  }, 1);
 }
 
 module.exports = {
