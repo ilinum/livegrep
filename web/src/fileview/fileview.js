@@ -217,11 +217,17 @@ function init(initData) {
   function triggerJumpToDef(event) {
       var info = getFileInfo();
       console.log(info)
-      var curEvent = $(event.target);
-      while ((curEvent.attr('class') && curEvent.attr('class').substring(0, 4) === "hljs") || curEvent.data("row") === undefined) {
-          curEvent = curEvent.parent();
+      var curTag = event.target;
+      while (!curTag.getAttribute("row")) {
+console.log(curTag);
+          const parentTag = curTag.parentNode;
+          if (!parentTag || typeof parentTag.getAttribute !== 'function') {
+              console.log("Error: span tag with row not found");
+              return;
+          }
+          curTag = parentTag;
       }
-      const row = curEvent.data("row");
+      const row = curTag.getAttribute("row");
       const col = document.getSelection().anchorOffset;
 
       xhttp = new XMLHttpRequest();
