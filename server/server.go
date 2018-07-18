@@ -329,13 +329,15 @@ func (s *server) jumpToDef(urlParams url.Values) (*GotoDefResponse, error) {
 	location := locations[0]
 
 	targetPath := strings.TrimPrefix(location.URI, "file://")
-	lineNum := location.TextRange.Start.Line
+	// Add 1 because URL is 1-indexed and language server is 0-indexed.
+	lineNum := location.TextRange.Start.Line + 1
+	if !strings.HasPrefix(targetPath, repo.Path) {
+		return nil, errors.New("cross-repo definitions aren't supported")
+	}
 	relPath, err := filepath.Rel(repo.Path, targetPath)
 	if err != nil {
 		return nil, err
 	}
-	// Add 1 because URL is 1-indexed and language server is 0-indexed.
-	lineNum += 1
 	return &GotoDefResponse{
 		URL: fmt.Sprintf("/view/%s/%s#L%d", repoName, relPath, lineNum),
 	}, nil

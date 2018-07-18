@@ -89,6 +89,7 @@ func (ls *langServerClientImpl) Hover(
 func (ls *langServerClientImpl) invoke(method string, params interface{}, result interface{}) error {
 	start := time.Now()
 	err := ls.rpcClient.Call(ls.ctx, method, params, &result)
-	fmt.Printf("%s returned in %s\nResult: %+v, err: %+v\n", method, time.Since(start), result, err)
+	fmt.Printf("%s returned in %s\nParams: %+v, Result: %+v, err: %+v\n", method, time.Since(start),
+		params, result, err)
 	return err
 }
