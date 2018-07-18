@@ -224,6 +224,19 @@ function init(initData) {
     return rangeBeforeClick.toString();
   }
 
+  // returns range for symbol containing the specified location.
+  // symbol is determined by greedily absorbing alphanumerics and underscores.
+  function symbolAtLocation(textNode, offset) {
+    const stringBefore = textNode.nodeValue.substring(0, offset);
+    const stringAfter = textNode.nodeValue.substring(offset);
+    const startIndex = stringBefore.match(/[a-zA-Z0-9_]*$/).index;
+    const endIndex = stringBefore.length + stringAfter.match(/^[a-zA-Z0-9_]*/)[0].length;
+    const range = new Range();
+    range.setStart(textNode, startIndex);
+    range.setEnd(textNode, endIndex);
+    return range;
+  }
+
   function triggerJumpToDef(event) {
       var info = getFileInfo();
 
@@ -253,10 +266,76 @@ function init(initData) {
       xhttp.send()
   }
 
+  var hoveringNode = null;
+
+  function cancelHover() {
+    if (hoveringNode) {
+      hoveringNode.className = 'hoverable';
+    }
+    hoveringNode = null;
+  }
+
+  function hoverOverNode(node) {
+    node.className = 'hovering';
+    hoveringNode = node;
+  }
+
+  function checkIfHoverable(node) {
+    console.log("checking if node is hoverable");
+    console.log(node);
+  }
+
+  // When source code is hovered over, highlight/underline any tokens for which
+  // jump-to-definition will work.
   function onHover(clientX, clientY) {
+    // The source-code consists of a <code id='source-code' class='code-pane'>
+    // containing lots of <span class="token tokentype">token</span>
+    // hoverable text may be surrounted by <span class="hoverable">
+    // text being hovered over is changed to class="hovering"
+    // non-hoverable text is class="nonhoverable"
     const pos = document.caretRangeFromPoint(clientX, clientY);
-    const code = document.getElementById('source-code');
-    const stringBefore = textBeforeOffset(pos.startContainer, pos.startOffset, code);
+    const textNode = pos.startContainer;
+    if (textNode.nodeType !== 3) { // expected to be a text node
+      return;
+    }
+    // decide what to do based on the class of the span containing the text
+    const node = textNode.parentNode;
+    const nodeClass = node.className;
+    console.log('node class is ' + nodeClass);
+    if (nodeClass === 'hovering') {
+      return;
+    }
+    cancelHover();
+    if (!nodeClass || nodeClass === 'nonhoverable') {
+      return;
+    }
+    if (nodeClass === 'hoverable') {
+      hoverOverNode(node);
+      return;
+    }
+    const tokenType = nodeClass.match(/token ([a-z]+)/);
+    if (tokenType) {
+      // the only token which potentially has a definition is a 'token function'
+      if (tokenType[1] === 'function') {
+        node.innerHTML = "<span>" + node.innerHTML + "</span>";
+        checkIfHoverable(node.childNodes[0]);
+      }
+      return;
+    }
+    if (node.id !== 'source-code') {
+      console.log('node id is ' + node.id);
+      return;
+    }
+    // syntax highlighter hasn't identified the token yet, so we have to parse
+    // to find the token ourselves, and create a new span around it.
+    const symbolRange = symbolAtLocation(textNode, pos.startOffset);
+    console.log('symbol range has text: ' + symbolRange.toString());
+    console.log(symbolRange);
+    const newSpan = document.createElement('span');
+    symbolRange.surroundContents(newSpan);
+    checkIfHoverable(newSpan);
+    return;
+    const stringBefore = textBeforeOffset(textNode, pos.startOffset, node);
     const rows = stringBefore.split('\n');
     // rows are zero-indexed
     const row = rows.length - 1;
