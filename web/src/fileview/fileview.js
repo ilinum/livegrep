@@ -215,11 +215,11 @@ function init(initData) {
   }
 
   // compute the offset from the start of the parent containing the click
-  function beforeSelection(sel, parentNode) {
+  function textBeforeOffset(childNode, childOffset, parentNode) {
     // create a new range starting at the beginning of the parent and going until the selection
     const rangeBeforeClick = new Range();
     rangeBeforeClick.setStart(parentNode, 0);
-    rangeBeforeClick.setEnd(sel.anchorNode, sel.anchorOffset);
+    rangeBeforeClick.setEnd(childNode, childOffset);
     return rangeBeforeClick.toString();
   }
 
@@ -227,8 +227,9 @@ function init(initData) {
       var info = getFileInfo();
       console.log(info);
 
-      const stringBefore = beforeSelection(
-          document.getSelection(),
+      const stringBefore = textBeforeOffset(
+          document.getSelection().anchorNode,
+          document.getSelection().anchorOffset,
           document.getElementById('source-code')
       );
 
@@ -250,6 +251,17 @@ function init(initData) {
       console.log("sending request to /api/v1/langserver/jumptodef?repo_name=" + info.repoName + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
       xhttp.open("GET", "/api/v1/langserver/jumptodef?repo_name=" + info.repoName + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col);
       xhttp.send()
+  }
+
+  function onHover(clientX, clientY) {
+    const pos = document.caretRangeFromPoint(clientX, clientY);
+    const code = document.getElementById('source-code');
+    const stringBefore = textBeforeOffset(pos.startContainer, pos.startOffset, code);
+    const rows = stringBefore.split('\n');
+    // rows are zero-indexed
+    const row = rows.length - 1;
+    const col = rows[row].length;
+    console.log('hover over row ' + row + ' col ' + col);
   }
 
   function processKeyEvent(event) {
@@ -375,6 +387,10 @@ function init(initData) {
       if (isCmdDown) {
         triggerJumpToDef(event);
       }
+    });
+
+    $('#source-code').on('mousemove', function (event) {
+      onHover(event.clientX, event.clientY);
     });
 
     $(document).mouseup(function() {
