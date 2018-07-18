@@ -8,8 +8,6 @@ var KeyCodes = {
   CONTROL: 17,
 };
 
-var isCmdDown = false;
-
 function getSelectedText() {
   return window.getSelection ? window.getSelection().toString() : null;
 }
@@ -483,26 +481,15 @@ function init(initData) {
       // Filter out key events when the user has focused an input field.
       if($(event.target).is('input,textarea'))
         return;
-      if (event.which === KeyCodes.COMMAND || event.which == KeyCodes.CONTROL) {
-        isCmdDown = true;
-      }
       // Filter out key if a modifier is pressed.
       if(event.altKey || event.ctrlKey || event.metaKey)
         return;
       processKeyEvent(event);
     });
 
-    $(document).on('keyup', function(event) {
-      if (event.which === KeyCodes.COMMAND || event.which == KeyCodes.CONTROL) {
-        isCmdDown = false;
-      }
-    });
-
     // if cmd + click is found, trigger jump to definition
     $(document).on('click', function (event) {
-      if (isCmdDown) {
-        triggerJumpToDef(event);
-      }
+      triggerJumpToDef(event);
     });
 
     $('#source-code').on('mousemove', function (event) {
