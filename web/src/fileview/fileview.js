@@ -238,6 +238,13 @@ function init(initData) {
   }
 
   function triggerJumpToDef(event) {
+      const nodeClicked = document.getSelection().anchorNode.parentNode;
+      const cachedUrl = nodeClicked.getAttribute('definition-url');
+      if (cachedUrl) {
+        window.location.href = cachedUrl;
+        return;
+      }
+
       var info = getFileInfo();
 
       const stringBefore = textBeforeOffset(
@@ -283,6 +290,33 @@ function init(initData) {
   function checkIfHoverable(node) {
     console.log("checking if node is hoverable");
     console.log(node);
+    var info = getFileInfo();
+
+    const code = document.getElementById('source-code');
+    const stringBefore = textBeforeOffset(node, 0, code);
+
+    const rows = stringBefore.split('\n');
+    // rows are zero-indexed
+    const row = rows.length - 1;
+    const col = rows[row].length;
+
+    xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.status == 200 && this.responseText) {
+        const resp = JSON.parse(this.responseText);
+        node.className = 'hoverable';
+        node.setAttribute('definition-url', resp.url);
+        console.log("added link to " + resp.url);
+      } else {
+        node.className = 'nonhoverable';
+        console.log("ERROR: " + this.status);
+      }
+    }
+
+    const url = "/api/v1/langserver/jumptodef?repo_name=" + info.repoName + "&file_path=" + window.filePath + "&row=" + row + "&col=" + col;
+    console.log("sending request to " + url);
+    xhttp.open("GET", url);
+    xhttp.send();
   }
 
   // When source code is hovered over, highlight/underline any tokens for which
@@ -329,6 +363,9 @@ function init(initData) {
     // syntax highlighter hasn't identified the token yet, so we have to parse
     // to find the token ourselves, and create a new span around it.
     const symbolRange = symbolAtLocation(textNode, pos.startOffset);
+    if (symbolRange.toString().length === 0) {
+      return;
+    }
     console.log('symbol range has text: ' + symbolRange.toString());
     console.log(symbolRange);
     const newSpan = document.createElement('span');
