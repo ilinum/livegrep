@@ -5,6 +5,7 @@ var KeyCodes = {
   ENTER: 13,
   SLASH_OR_QUESTION_MARK: 191,
   COMMAND: 91,
+  CONTROL: 17,
 };
 
 var isCmdDown = false;
@@ -225,7 +226,6 @@ function init(initData) {
 
   function triggerJumpToDef(event) {
       var info = getFileInfo();
-      console.log(info);
 
       const stringBefore = beforeSelection(
           document.getSelection(),
@@ -241,7 +241,7 @@ function init(initData) {
       xhttp.onreadystatechange = function() {
           if (this.status == 200 && this.responseText) {
               const resp = JSON.parse(this.responseText);
-              window.location.replace(resp.url);
+              window.location.href = resp.url;
           } else {
               console.log("ERROR: " + this.status);
           }
@@ -355,7 +355,7 @@ function init(initData) {
       // Filter out key events when the user has focused an input field.
       if($(event.target).is('input,textarea'))
         return;
-      if (event.which === KeyCodes.COMMAND) {
+      if (event.which === KeyCodes.COMMAND || event.which == KeyCodes.CONTROL) {
         isCmdDown = true;
       }
       // Filter out key if a modifier is pressed.
@@ -365,7 +365,7 @@ function init(initData) {
     });
 
     $(document).on('keyup', function(event) {
-      if (event.which === KeyCodes.COMMAND) {
+      if (event.which === KeyCodes.COMMAND || event.which == KeyCodes.CONTROL) {
         isCmdDown = false;
       }
     });
